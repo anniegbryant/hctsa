@@ -91,6 +91,15 @@ addParameter(inputP,'makeFigure',default_makeFigure,@islogical);
 default_nodeSize = 12;
 addParameter(inputP,'nodeSize',default_nodeSize,@isnumeric);
 
+% Seed number
+default_seed = 127;
+addParameter(inputP, 'seed', default_seed, @isnumeric)
+
+% How much to weight feature group membership
+default_groupWeight = 0;
+addParameter(inputP, 'groupWeight', default_groupWeight, @isnumeric);
+
+
 %-------------------------------------------------------------------------------
 %% Parse inputs:
 parse(inputP,varargin{:});
@@ -108,6 +117,8 @@ tagStyle = inputP.Results.tagStyle;
 thresholdByProportion = inputP.Results.thresholdByProportion;
 makeFigure = inputP.Results.makeFigure;
 nodeSize = inputP.Results.nodeSize;
+seed = inputP.Results.seed;
+groupWeight = inputP.Results.groupWeight;
 
 numGroups = length(unique(nodeLabels)); % Number of different (colored) groups to plot
 
@@ -234,18 +245,34 @@ xy = cell(numRepeats,1); % sets of node positions (x,y)
 
 fprintf(1,'Computing network visualization over %u iterations and %u repeats\n',maxIter,numRepeats);
 
+% Seed the random number generator for reproducibility
+rng(seed);
+
 for jman = 1:numRepeats
     % Random intial values - or could seed with results from an earlier layout
     x = rand(numNodes,1); x = x - mean(x);
     y = rand(numNodes,1); y = y - mean(y);
 
     % Run through the mechanics of the visualization method:
-    for iter = 1:maxIter  % Could use a threshold on the gradient here
-        [f,g] = NetVis_Jtilda2d(x,y,numApprox); % Gets the repulsion forces using an approximation
-        J = [(E*x-f);(E*y-g)]; % This is the full gradient (attraction - repulsion)
-        % This is only to plot the residual (so can be removed for speed)
-        x = R\(Rtr\f); x = x-mean(x); % Update and center
-        y = R\(Rtr\g); y = y-mean(y); % Update and center
+    for iter = 1:maxIter
+        [f,g] = NetVis_Jtilda2d(x,y,numApprox);
+        J = [(E*x-f);(E*y-g)];
+        x = R\(Rtr\f); x = x-mean(x);
+        y = R\(Rtr\g); y = y-mean(y);
+    
+        % Pull each node toward its group centroid
+        if groupWeight > 0
+            for grp = 1:numGroups
+                idx = nodeLabels == grp;
+                cx = mean(x(idx));
+                cy = mean(y(idx));
+                x(idx) = x(idx) + groupWeight * (cx - x(idx));
+                y(idx) = y(idx) + groupWeight * (cy - y(idx));
+            end
+            % Re-center globally after group pulls
+            x = x - mean(x);
+            y = y - mean(y);
+        end
     end
 
     % Give information about convergence:
